@@ -1,0 +1,292 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peta Rute Jemputan RS Adhyaksa Jatim</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style>
+        /* Memastikan map memenuhi container */
+        #map { height: 100%; width: 100%; z-index: 10; }
+        
+        /* Kustomisasi Icon Rumah Sakit */
+        .hospital-icon {
+            background-color: #ef4444; /* red-500 */
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 16px;
+            z-index: 1000;
+        }
+        
+        /* Kustomisasi Icon Urutan Titik Jemput */
+        .waypoint-number {
+            background-color: #2563eb; /* blue-600 */
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        /* Varian Icon untuk rute pulang */
+        .waypoint-number.pulang {
+            background-color: #f59e0b; /* amber-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen w-full overflow-hidden font-sans relative flex">
+
+    <!-- Sidebar Informasi Rute (Bottom Sheet on Mobile) -->
+    <aside id="sidebar" class="absolute md:relative z-30 w-full md:w-1/3 lg:w-1/4 bg-white shadow-[0_-10px_25px_-5px_rgba(0,0,0,0.2)] md:shadow-xl h-[75vh] md:h-full bottom-0 md:bottom-auto rounded-t-3xl md:rounded-none transition-transform duration-300 transform translate-y-full md:translate-y-0 flex flex-col">
+        
+        <!-- Pill / Drag handle style untuk mobile -->
+        <div class="md:hidden w-full flex justify-center pt-3 pb-1">
+            <div class="w-12 h-1.5 bg-gray-300 rounded-full"></div>
+        </div>
+
+        <div class="px-5 pb-4 pt-2 md:pt-5 border-b border-gray-200 sticky top-0 bg-white z-10 flex justify-between items-start rounded-t-3xl md:rounded-none">
+            <div class="w-full">
+                <div class="flex justify-between items-start w-full">
+                    <div>
+                        <h1 class="text-xl font-bold text-gray-800">Rute Terintegrasi Bus</h1>
+                        <p class="text-sm text-gray-500 mt-1">RS Adhyaksa Jawa Timur</p>
+                    </div>
+                    <button id="close-sidebar" class="md:hidden p-2 -mr-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 rounded-full focus:outline-none transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <!-- Toggle Berangkat / Pulang -->
+                <div class="flex bg-gray-100 p-1 rounded-lg mt-4 w-full">
+                    <button id="btn-berangkat" class="flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow-sm text-blue-600 transition-all">☀️ Jemput (Berangkat)</button>
+                    <button id="btn-pulang" class="flex-1 py-2 text-sm font-semibold rounded-md text-gray-500 hover:text-gray-700 transition-all">🌙 Antar (Pulang)</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="p-5 flex-1 overflow-y-auto">
+            <div id="info-card" class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-5 transition-colors">
+                <h2 id="info-title" class="font-semibold text-blue-800 text-sm mb-1">Rute Keberangkatan</h2>
+                <p id="info-desc" class="text-xs text-blue-600 mb-3">Bus menjemput searah dari ujung Barat (Mojoagung) memutar ke ujung Timur, dan berakhir di RS Adhyaksa.</p>
+                
+                <div class="flex gap-2">
+                    <span id="badge-distance" class="inline-flex items-center gap-1 px-2 py-1 bg-white text-gray-700 text-[11px] font-medium rounded border border-gray-200 shadow-sm">
+                        Menghitung jarak...
+                    </span>
+                    <span id="badge-time" class="inline-flex items-center gap-1 px-2 py-1 bg-white text-gray-700 text-[11px] font-medium rounded border border-gray-200 shadow-sm">
+                        Menghitung waktu...
+                    </span>
+                </div>
+            </div>
+
+            <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Urutan Titik (Jalan Utama)</h3>
+            <ul id="route-steps" class="space-y-0 relative before:absolute before:inset-y-0 before:left-[11px] before:w-[2px] before:bg-gray-200">
+                <!-- Urutan rute akan diisi JS -->
+            </ul>
+        </div>
+        
+        <div class="p-4 border-t border-gray-200 bg-gray-50 text-[10px] leading-tight text-gray-500">
+            *Garis rute pada peta disesuaikan secara presisi mengikuti kontur jalan raya yang dilalui bus menggunakan kalkulasi GPS.
+        </div>
+    </aside>
+
+    <!-- Area Peta Leaflet -->
+    <main class="flex-1 h-full w-full relative z-10">
+        <div id="map"></div>
+        
+        <!-- Tombol Floating Mobile untuk Buka Legenda -->
+        <button id="open-sidebar" class="md:hidden absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg font-semibold flex items-center gap-2 hover:bg-blue-700 active:scale-95 transition-all">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            Detail Perjalanan
+        </button>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script>
+        // Inisialisasi Peta
+        const map = L.map('map', { zoomControl: false }).setView([-7.520, 112.450], 11);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Layer Group untuk memudahkan pembersihan marker saat toggle rute
+        const routeLayer = L.layerGroup().addTo(map);
+
+        // Definisi Base Route (Arah Berangkat)
+        const baseRoute = [
+            [-7.5614, 112.3421, "Puskesmas Mojoagung (Jombang)"],
+            [-7.5458, 112.3842, "Masjid Majapahit Trowulan"],
+            [-7.5115, 112.4241, "RS Dian Husada / Gemekan"],
+            [-7.4878, 112.4284, "RSI Sakinah Sooko"],
+            [-7.4723, 112.4552, "Terminal Kertajaya Mojokerto"],
+            [-7.5028, 112.5539, "RSUD Prof. dr. Soekandar Mojosari"],
+            [-7.5520, 112.5400, "SPBU Sampangagung"],
+            [-7.5856, 112.4930, "SPBU Badung Dlanggu"],
+            [-7.5840, 112.4520, "RS Adhyaksa Jawa Timur"]
+        ];
+
+        let currentMode = 'berangkat';
+
+        // Elemen UI
+        const stepsContainer = document.getElementById('route-steps');
+        const btnBerangkat = document.getElementById('btn-berangkat');
+        const btnPulang = document.getElementById('btn-pulang');
+        
+        const infoCard = document.getElementById('info-card');
+        const infoTitle = document.getElementById('info-title');
+        const infoDesc = document.getElementById('info-desc');
+
+        // Fungsi Utama untuk me-render rute
+        function renderRoute(mode) {
+            routeLayer.clearLayers(); // Bersihkan peta
+            stepsContainer.innerHTML = ''; // Bersihkan list sidebar
+            document.getElementById('badge-distance').innerHTML = 'Menghitung...';
+            document.getElementById('badge-time').innerHTML = 'Menghitung...';
+
+            // Tentukan susunan array berdasarkan mode
+            const activeRoute = mode === 'berangkat' ? [...baseRoute] : [...baseRoute].reverse();
+            const coordsForRouting = [];
+            const routeColor = mode === 'berangkat' ? '#2563eb' : '#f59e0b'; // Biru untuk berangkat, Orange untuk pulang
+
+            // Render Titik
+            activeRoute.forEach((point, index) => {
+                const lat = point[0];
+                const lng = point[1];
+                const name = point[2];
+                
+                coordsForRouting.push(`${lng},${lat}`);
+                
+                const isHospital = name.includes("RS Adhyaksa");
+                const isStart = index === 0;
+                const isEnd = index === activeRoute.length - 1;
+
+                // 1. Sidebar Item HTML
+                const li = document.createElement('li');
+                li.className = "relative pl-8 py-3";
+                
+                let dotIcon = '';
+                if (isHospital) {
+                    dotIcon = `<div class="absolute left-0 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 border-red-500 bg-red-100 text-red-600 text-[10px] font-bold flex items-center justify-center z-10 shadow-sm">🏥</div>`;
+                } else {
+                    const colorClass = mode === 'berangkat' ? 'border-blue-500 bg-white text-blue-600' : 'border-amber-500 bg-white text-amber-600';
+                    dotIcon = `<div class="absolute left-0 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full border-2 ${colorClass} text-[10px] font-bold flex items-center justify-center z-10 shadow-sm">${index + 1}</div>`;
+                }
+
+                li.innerHTML = `
+                    ${dotIcon}
+                    <div class="${isHospital ? 'text-red-600 font-bold' : 'text-gray-700 font-medium'} text-sm">${name}</div>
+                    <div class="text-[10px] text-gray-400 mt-0.5">${isStart ? 'Titik Awal' : (isEnd ? 'Tujuan Akhir' : 'Titik Pemberhentian')}</div>
+                `;
+                stepsContainer.appendChild(li);
+
+                // 2. Map Marker
+                if (isHospital) {
+                    const hospitalIcon = L.divIcon({ className: '', html: `<div class="hospital-icon" style="width: 32px; height: 32px;">🏥</div>`, iconSize: [32, 32], iconAnchor: [16, 16] });
+                    L.marker([lat, lng], { icon: hospitalIcon, zIndexOffset: 1000 }).addTo(routeLayer).bindPopup(`<b>${name}</b><br>${isStart ? 'Titik Keberangkatan' : 'Tujuan Akhir'}`);
+                } else {
+                    const bgClass = mode === 'berangkat' ? '' : 'pulang';
+                    const stepIcon = L.divIcon({ className: '', html: `<div class="waypoint-number ${bgClass}" style="width: 24px; height: 24px;">${index + 1}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+                    L.marker([lat, lng], { icon: stepIcon }).addTo(routeLayer).bindPopup(`<b>Pemberhentian ${index + 1}</b><br>${name}`);
+                }
+            });
+
+            // Panggil API OSRM untuk menggambar jalan raya
+            const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${coordsForRouting.join(';')}?overview=full&geometries=geojson`;
+
+            fetch(osrmUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if(data.code === 'Ok' && data.routes.length > 0) {
+                        const route = data.routes[0];
+                        
+                        L.geoJSON(route.geometry, {
+                            style: { color: routeColor, weight: 5, opacity: 0.8, lineJoin: 'round' }
+                        }).addTo(routeLayer);
+
+                        const distKm = (route.distance / 1000).toFixed(1);
+                        document.getElementById('badge-distance').innerHTML = `🗺️ Jarak Tempuh: <b>${distKm} KM</b>`;
+
+                        const timeMinutes = Math.round(route.duration / 60);
+                        const h = Math.floor(timeMinutes / 60);
+                        const m = timeMinutes % 60;
+                        const timeStr = h > 0 ? `${h} jam ${m} mnt` : `${m} mnt`;
+                        document.getElementById('badge-time').innerHTML = `⏱️ Estimasi Waktu: <b>${timeStr}</b>`;
+                    }
+                })
+                .catch(error => {
+                    console.warn("OSRM routing failed.");
+                    const latlngs = activeRoute.map(p => [p[0], p[1]]);
+                    L.polyline(latlngs, {color: routeColor, weight: 4, dashArray: '10, 10'}).addTo(routeLayer);
+                    document.getElementById('badge-distance').innerHTML = `⚠️ Gagal memuat estimasi.`;
+                });
+        }
+
+        // --- Event Listener Toggle ---
+        btnBerangkat.addEventListener('click', () => {
+            currentMode = 'berangkat';
+            // Styling Tombol
+            btnBerangkat.className = "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow-sm text-blue-600 transition-all";
+            btnPulang.className = "flex-1 py-2 text-sm font-semibold rounded-md text-gray-500 hover:text-gray-700 transition-all";
+            
+            // Styling Info Card
+            infoCard.className = "bg-blue-50 border border-blue-100 rounded-lg p-4 mb-5 transition-colors";
+            infoTitle.className = "font-semibold text-blue-800 text-sm mb-1";
+            infoTitle.innerText = "Rute Keberangkatan (Jemput)";
+            infoDesc.className = "text-xs text-blue-600 mb-3";
+            infoDesc.innerText = "Bus menjemput searah dari ujung Barat (Mojoagung) memutar ke ujung Timur, dan berakhir di RS Adhyaksa.";
+
+            renderRoute('berangkat');
+        });
+
+        btnPulang.addEventListener('click', () => {
+            currentMode = 'pulang';
+            // Styling Tombol
+            btnPulang.className = "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow-sm text-amber-600 transition-all";
+            btnBerangkat.className = "flex-1 py-2 text-sm font-semibold rounded-md text-gray-500 hover:text-gray-700 transition-all";
+            
+            // Styling Info Card
+            infoCard.className = "bg-amber-50 border border-amber-100 rounded-lg p-4 mb-5 transition-colors";
+            infoTitle.className = "font-semibold text-amber-800 text-sm mb-1";
+            infoTitle.innerText = "Rute Kepulangan (Antar)";
+            infoDesc.className = "text-xs text-amber-600 mb-3";
+            infoDesc.innerText = "Bus memulai perjalanan dari RS Adhyaksa, memutar mengantar pegawai, hingga titik terakhir di Mojoagung.";
+
+            renderRoute('pulang');
+        });
+
+        // Load awal
+        renderRoute('berangkat');
+
+        // Sesuaikan pandangan peta
+        setTimeout(() => { map.fitBounds(baseRoute.map(p => [p[0], p[1]]), { padding: [40, 40] }); }, 500);
+
+        // --- Logika Panel Mobile UI ---
+        const sidebar = document.getElementById('sidebar');
+        const openBtn = document.getElementById('open-sidebar');
+        const closeBtn = document.getElementById('close-sidebar');
+
+        openBtn.addEventListener('click', () => sidebar.classList.remove('translate-y-full'));
+        closeBtn.addEventListener('click', () => sidebar.classList.add('translate-y-full'));
+
+    </script>
+</body>
+</html>
+
+
+
+```
