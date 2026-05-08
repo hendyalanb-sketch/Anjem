@@ -145,6 +145,36 @@ tailwind.config = {
   .check { display:flex; align-items:center; gap: 8px; cursor: pointer; padding: 6px 8px; border-radius: 8px; transition: background .15s; font-size: 13px; }
   .check:hover { background: #f1f5f9; }
   .check input { accent-color: #0284c7; }
+
+  /* Bus route preview */
+  #bus-route-map { width: 100%; height: 100%; background: #e2e8f0; z-index: 1; }
+  .bus-hospital-marker,
+  .bus-stop-marker {
+    border: 2px solid white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 800;
+    font-size: 11px;
+    box-shadow: 0 2px 10px rgba(15,23,42,0.25);
+  }
+  .bus-hospital-marker { background: #ef4444; }
+  .bus-stop-marker { background: #2563eb; }
+  .bus-stop-marker.dropoff { background: #f59e0b; }
+  .bus-sheet {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 500;
+    max-height: 85%;
+    transition: transform .35s cubic-bezier(.4,0,.2,1);
+  }
+  .bus-sheet.collapsed { transform: translateY(calc(100% - 100px)); }
+  .bus-drag-handle { width: 40px; height: 5px; background: #e5e7eb; border-radius: 999px; margin: 12px auto; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body class="h-full overflow-hidden">
@@ -179,6 +209,10 @@ tailwind.config = {
       <a class="nav-link" data-tab="directions">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18h4a4 4 0 0 0 4-4V8a4 4 0 0 1 4-4h4"/><path d="M16 8l4-4-4-4"/><path d="M4 6h5"/></svg>
         <span>Rute Sekali Jalan</span>
+      </a>
+      <a class="nav-link" data-tab="bus-route">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6v6"/><path d="M16 6v6"/><rect x="5" y="3" width="14" height="14" rx="2"/><path d="M7 17v3"/><path d="M17 17v3"/><path d="M7 12h10"/></svg>
+        <span>Rute Bus</span>
       </a>
       <a class="nav-link" data-tab="data">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6"/></svg>
@@ -483,6 +517,58 @@ tailwind.config = {
         </div>
       </section>
 
+      <!-- ===== BUS ROUTE PREVIEW PANEL ===== -->
+      <section data-panel="bus-route" class="panel flex-col h-full">
+        <div class="relative flex-1 overflow-hidden bg-gray-100">
+          <div class="absolute top-4 left-4 right-4 z-[500] pointer-events-none">
+            <div class="bg-white/90 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-gray-100 flex items-center gap-3 pointer-events-auto max-w-sm">
+              <div class="w-10 h-10 bg-red-600 rounded-xl flex items-center justify-center text-white shadow-inner font-bold">RS</div>
+              <div>
+                <h3 class="text-sm font-bold text-gray-800 leading-none">SiMADA Transport</h3>
+                <p class="text-[10px] text-gray-500 mt-1 uppercase tracking-wider font-semibold">RS Adhyaksa Jawa Timur</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="bus-route-map"></div>
+
+          <div id="bus-bottom-sheet" class="bus-sheet collapsed bg-white rounded-t-[24px] shadow-[0_-5px_20px_rgba(0,0,0,0.15)] flex flex-col">
+            <button class="text-left" onclick="toggleBusSheet()" type="button">
+              <div class="bus-drag-handle"></div>
+              <div class="px-6 pb-2 flex justify-between items-center">
+                <h2 id="bus-sheet-title" class="text-lg font-bold text-gray-800">Rute Jemputan</h2>
+                <span id="bus-toggle-icon" class="text-gray-400 transition-transform">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"></path></svg>
+                </span>
+              </div>
+            </button>
+
+            <div class="px-6 pb-6 overflow-y-auto no-scrollbar flex-1">
+              <div class="flex p-1 bg-gray-100 rounded-xl mb-4">
+                <button id="btn-bus-pickup" onclick="setBusMode('pickup')" class="flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm text-blue-600 transition-all" type="button">Jemput</button>
+                <button id="btn-bus-dropoff" onclick="setBusMode('dropoff')" class="flex-1 py-3 text-sm font-bold rounded-lg text-gray-500 transition-all" type="button">Antar Balik</button>
+              </div>
+
+              <div class="flex gap-2 mb-6">
+                <div class="flex-1 bg-gray-50 border border-gray-200 p-3 rounded-xl text-center">
+                  <p class="text-[10px] text-gray-400 uppercase font-bold">Total Jarak</p>
+                  <p id="bus-stat-distance" class="text-sm font-bold text-gray-700">-- KM</p>
+                </div>
+                <div class="flex-1 bg-gray-50 border border-gray-200 p-3 rounded-xl text-center">
+                  <p class="text-[10px] text-gray-400 uppercase font-bold">Waktu Tempuh</p>
+                  <p id="bus-stat-time" class="text-sm font-bold text-gray-700">-- Menit</p>
+                </div>
+              </div>
+
+              <div class="relative">
+                <div class="absolute left-[15px] top-2 bottom-2 w-0.5 bg-gray-100"></div>
+                <div id="bus-timeline-list" class="space-y-6 relative"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ===== DATA PANEL ===== -->
       <section data-panel="data" class="panel flex-col h-full p-5 lg:p-7">
         <div class="card flex-1 flex flex-col overflow-hidden">
@@ -575,7 +661,8 @@ const STATE = {
   layer: 'markers',
   showRoutes: false,
   oneWayMode: 'pickup',
-  map: null, miniMap: null, oneWayMap: null,
+  busMode: 'pickup',
+  map: null, miniMap: null, oneWayMap: null, busRouteMap: null,
   layers: { markers: null, cluster: null, heat: null, routes: null },
   filtered: [],
 };
@@ -606,6 +693,7 @@ const TAB_TITLES = {
   map: ['Peta Sebaran Titik Jemput', 'Visualisasi presisi 110 pegawai pada peta interaktif'],
   routes: ['Rekomendasi Rute Optimal', '5 koridor antar-jemput berbasis klaster geografis'],
   directions: ['Rute Sekali Jalan', 'Arah antar dan jemput satu putaran sesuai data survei'],
+  'bus-route': ['Rute Bus', 'Tampilan rute bus dengan peta dan panel perjalanan'],
   data: ['Data Pegawai', 'Tabel detail dan ekspor data lengkap responden'],
   insights: ['Wawasan & Analisis Survei', 'Distribusi demografis, jam kerja, dan kebutuhan'],
 };
@@ -620,6 +708,10 @@ function setTab(tab) {
   if (tab === 'directions' && STATE.oneWayMap) setTimeout(() => {
     STATE.oneWayMap.invalidateSize();
     recenterOneWayMap();
+  }, 50);
+  if (tab === 'bus-route' && STATE.busRouteMap) setTimeout(() => {
+    STATE.busRouteMap.invalidateSize();
+    recenterBusRouteMap();
   }, 50);
   if (tab === 'overview' && STATE.miniMap) setTimeout(() => STATE.miniMap.invalidateSize(), 50);
   closeSidebar();
@@ -845,6 +937,7 @@ function visibleResponses() {
 
 let markersGroup, clusterGroup, heatLayer, routesLayer;
 let oneWayRoutesLayer;
+let busRouteLayer;
 
 function initMap() {
   STATE.map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([HOSPITAL.lat, HOSPITAL.lng], 11);
@@ -892,6 +985,26 @@ function initOneWayMap() {
   L.tileLayer(TILE_URL, TILE_OPTS).addTo(STATE.oneWayMap);
   oneWayRoutesLayer = L.layerGroup().addTo(STATE.oneWayMap);
   renderOneWayRoutes();
+}
+
+const BUS_ROUTE_BASE = [
+  [-7.5614, 112.3421, 'Puskesmas Mojoagung'],
+  [-7.5458, 112.3842, 'Masjid Trowulan'],
+  [-7.5115, 112.4241, 'RS Dian Husada'],
+  [-7.4878, 112.4284, 'RSI Sakinah Sooko'],
+  [-7.4723, 112.4552, 'Terminal Kertajaya'],
+  [-7.5028, 112.5539, 'RSUD Soekandar'],
+  [-7.5520, 112.5400, 'SPBU Sampangagung'],
+  [-7.5856, 112.4930, 'SPBU Badung Dlanggu'],
+  [-7.5840, 112.4520, 'RS Adhyaksa Jatim'],
+];
+
+function initBusRouteMap() {
+  STATE.busRouteMap = L.map('bus-route-map', { zoomControl: false, preferCanvas: true }).setView([-7.584, 112.452], 12);
+  L.tileLayer(TILE_URL, { ...TILE_OPTS, attribution: '&copy; OpenStreetMap, &copy; CARTO' }).addTo(STATE.busRouteMap);
+  L.control.zoom({ position: 'topright' }).addTo(STATE.busRouteMap);
+  busRouteLayer = L.layerGroup().addTo(STATE.busRouteMap);
+  renderBusRoute();
 }
 
 function refreshMap() {
@@ -1238,6 +1351,117 @@ function recenterOneWayMap() {
   STATE.oneWayMap.fitBounds(L.latLngBounds(coords), { padding: [60, 60] });
 }
 
+// =================================================================
+// Bus route preview panel
+// =================================================================
+function setBusMode(mode) {
+  STATE.busMode = mode;
+  const pickup = document.getElementById('btn-bus-pickup');
+  const dropoff = document.getElementById('btn-bus-dropoff');
+  const title = document.getElementById('bus-sheet-title');
+
+  if (mode === 'pickup') {
+    pickup.className = 'flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm text-blue-600 transition-all';
+    dropoff.className = 'flex-1 py-3 text-sm font-bold rounded-lg text-gray-500 transition-all';
+    title.textContent = 'Rute Jemputan';
+  } else {
+    dropoff.className = 'flex-1 py-3 text-sm font-bold rounded-lg bg-white shadow-sm text-amber-600 transition-all';
+    pickup.className = 'flex-1 py-3 text-sm font-bold rounded-lg text-gray-500 transition-all';
+    title.textContent = 'Rute Antar Balik';
+  }
+
+  renderBusRoute();
+}
+
+function renderBusRoute() {
+  if (!STATE.busRouteMap || !busRouteLayer) return;
+
+  busRouteLayer.clearLayers();
+  const isPickup = STATE.busMode === 'pickup';
+  const activeData = isPickup ? [...BUS_ROUTE_BASE] : [...BUS_ROUTE_BASE].reverse();
+  const lineColor = isPickup ? '#2563eb' : '#f59e0b';
+  const timeline = document.getElementById('bus-timeline-list');
+  timeline.innerHTML = '';
+
+  activeData.forEach((p, i) => {
+    const isHospital = /Adhyaksa/i.test(p[2]);
+    const colorClass = isPickup ? 'bg-blue-600' : 'bg-amber-500';
+
+    timeline.innerHTML += `
+      <div class="flex items-start gap-4">
+        <div class="w-8 h-8 rounded-full ${isHospital ? 'bg-red-600' : colorClass} flex-shrink-0 flex items-center justify-center text-white text-[10px] z-10 border-4 border-white shadow-sm font-bold">
+          ${isHospital ? 'RS' : i + 1}
+        </div>
+        <div>
+          <p class="text-sm font-bold text-gray-700">${p[2]}</p>
+          <p class="text-[10px] text-gray-400 italic">${i === 0 ? 'Mulai Perjalanan' : (i === activeData.length - 1 ? 'Tujuan Akhir' : 'Pemberhentian')}</p>
+        </div>
+      </div>
+    `;
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="${isHospital ? 'bus-hospital-marker' : 'bus-stop-marker ' + (!isPickup ? 'dropoff' : '')}" style="width:24px;height:24px;">${isHospital ? 'RS' : i + 1}</div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+    });
+    L.marker([p[0], p[1]], { icon })
+      .bindPopup(`<div class="p-3"><div class="font-bold text-sm text-slate-900">${p[2]}</div><div class="text-[11px] text-slate-500 mt-1">${isHospital ? 'RS Adhyaksa' : (isPickup ? 'Titik jemput' : 'Titik antar')}</div></div>`)
+      .addTo(busRouteLayer);
+  });
+
+  const fallbackKm = routeDistanceFromArray(activeData);
+  document.getElementById('bus-stat-distance').textContent = fallbackKm.toFixed(1) + ' KM';
+  document.getElementById('bus-stat-time').textContent = Math.round(fallbackKm * 1.6) + ' Menit';
+
+  const coordsString = activeData.map(p => `${p[1]},${p[0]}`).join(';');
+  fetch(`https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`)
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('OSRM unavailable')))
+    .then(data => {
+      const route = data.routes?.[0];
+      if (!route) return drawBusFallback(activeData, lineColor);
+      L.geoJSON(route.geometry, {
+        style: { color: lineColor, weight: 5, opacity: 0.8, lineJoin: 'round', lineCap: 'round' },
+      }).addTo(busRouteLayer);
+      document.getElementById('bus-stat-distance').textContent = (route.distance / 1000).toFixed(1) + ' KM';
+      document.getElementById('bus-stat-time').textContent = Math.round(route.duration / 60) + ' Menit';
+      recenterBusRouteMap();
+    })
+    .catch(() => drawBusFallback(activeData, lineColor));
+
+  recenterBusRouteMap();
+}
+
+function drawBusFallback(activeData, color) {
+  L.polyline(activeData.map(p => [p[0], p[1]]), {
+    color,
+    weight: 5,
+    opacity: 0.8,
+    lineJoin: 'round',
+    lineCap: 'round',
+  }).addTo(busRouteLayer);
+}
+
+function routeDistanceFromArray(points) {
+  let km = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    km += haversine({ lat: points[i][0], lng: points[i][1] }, { lat: points[i + 1][0], lng: points[i + 1][1] });
+  }
+  return km;
+}
+
+function toggleBusSheet() {
+  const sheet = document.getElementById('bus-bottom-sheet');
+  const icon = document.getElementById('bus-toggle-icon');
+  sheet.classList.toggle('collapsed');
+  icon.style.transform = sheet.classList.contains('collapsed') ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
+function recenterBusRouteMap() {
+  if (!STATE.busRouteMap) return;
+  STATE.busRouteMap.fitBounds(L.latLngBounds(BUS_ROUTE_BASE.map(p => [p[0], p[1]])), { padding: [70, 70] });
+}
+
 function haversine(a, b) {
   const R = 6371;
   const dLat = (b.lat - a.lat) * Math.PI / 180;
@@ -1302,6 +1526,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initMiniMap();
   initMap();
   initOneWayMap();
+  initBusRouteMap();
   styleLayerButtons();
 });
 </script>
